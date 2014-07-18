@@ -20,24 +20,18 @@
 // I could also store the degrees advance in the table, then multiply to generate the values, but why?  I can back-calculate that
 // if necessary.
 #include <AS5040.h>
-AS5040 myAS5040(2,3,5);
+AS5040 myAS5040(2,3,5); // this is pin assignment: clock pin, chip select, and data pin, on 2,3 and 5, respectively
 
 volatile float PIP_period;    // this is 36 interrupts per revolution
 volatile long microseconds;  // time between PIP signals
 volatile int throttle_position;   // rotary encoder on throttle
 int output_pin = 1;          // SAW output
-//int rotary_encoder_clock_pin = 2;
-//int rotary_encoder_chipselect_pin = 3;
-//int rotary_encoder_data_pin = 5;
 int debug = 1;
 
 void setup()
 {
   attachInterrupt(0, count_interrupt, FALLING);
   pinMode(output_pin, OUTPUT);
-  //pinMode(rotary_encoder_chipselect_pin, INPUT);
-  //pinMode(rotary_encoder_clock_pin, OUTPUT);
-  //pinMode(rotary_encoder_data_pin, INPUT);
   if(debug)
   {
     Serial.begin(9600);
