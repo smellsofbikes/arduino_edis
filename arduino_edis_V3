@@ -60,12 +60,16 @@ int lookup_delay(long PIP_period, int throttle_position)
   /*int advance[2][8] = 
   {{10,11,12,13,14,15,16,17}, 
    {20,21,22,23,24,25,26,27}}; */
+  static int rowsize = 8;  // presumably this is rpm
+  static int columnsize = 3; // and this is throttle position
   int advance[8][3] = {{10,11,12},{13,14,15},{16,17,18},{19,20,21},{22,23,24},{25,26,27},{28,29,30},{31,32,33}};
   int rows, columns;
   rows = 1;   // this is wrong: I was doing something amazing in here.
   columns = throttle_position;
   if (rows < 0) rows = 0;
-  if (rows > 7) rows = 7;
+  if (rows > rowsize-1) rows = rowsize-1;
+  if (columns > columnsize-1) columns = columnsize-1;
+  if (columns < 0) columns = 0;    // these need to be changed to reflect the size of the array.
   return(advance[rows] [columns]);
   
 }
@@ -82,7 +86,7 @@ int AS5040_read()
   int angle;
   angle = myAS5040.measured_degrees();
   // this needs to digitize to nearest 10 or whatever the column fineness is.
-  return 10;
+  return angle;
 }
 
 void loop()
