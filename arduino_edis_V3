@@ -1,13 +1,11 @@
 
 // edis controller code.
-// pip is every tooth, so 36 times per revolution.  At 6000 rpm, that's 3600 pulses per second.
 // Strategy is to make a 2d array, one being rpm, the other being load, with no hard-coded rpm or load information, just
 // a slope/offset/digitization into each one.  (maybe compute as a 0-1 function, then multiply by the number of rows and columns, 
 // then turn into an integer and read that row or column.)
 
-// Measured milliseconds will range from 120mS for 500 rpm to 6mS for 10,000 rpm.  36 interrupts per rotation means at 
-//  500 rpm, 3.33mS between interrupts, at 10,000 rpm, 0.167mS between interrupts.
-// may want to do int(mS*100)
+// pip is every tooth, so 36 times per revolution.  At 6000 rpm, that's 3600 pulses per second.
+// Measured milliseconds will range from 120mS for 500 rpm to 6mS for 10,000 rpm.  Or 55 to 2.777uS.  Working in uS is better.
 
 // program continuously reads throttle position.  When a negative interrupt is caught, store microseconds, then the array number 
 //  (which is the pause time in microseconds) is retrieved.  Pin set high, delay for pause time, pin set low, exit interrupt.
@@ -19,10 +17,36 @@
 
 // I could also store the degrees advance in the table, then multiply to generate the values, but why?  I can back-calculate that
 // if necessary.
-#include <AS5040.h>
-AS5040 myAS5040(2,3,5); // this is pin assignment: clock pin, chip select, and data pin, on 2,3 and 5, respectively
 
-volatile float PIP_period;    // this is 36 interrupts per revolution
+/* 
+rpm  interrupts	 seconds         micros      linearized
+500	18000	5.55556E-05	55.55555556	1
+1000	36000	2.77778E-05	27.77777778	2
+1500	54000	1.85185E-05	18.51851852	3
+2000	72000	1.38889E-05	13.88888889	4
+2500	90000	1.11111E-05	11.11111111	5
+3000	108000	9.25926E-06	9.259259259	6
+3500	126000	7.93651E-06	7.936507937	7
+4000	144000	6.94444E-06	6.944444444	8
+4500	162000	6.17284E-06	6.172839506	9
+5000	180000	5.55556E-06	5.555555556	10
+5500	198000	5.05051E-06	5.050505051	11
+6000	216000	4.62963E-06	4.62962963	12
+6500	234000	4.2735E-06	4.273504274	13
+7000	252000	3.96825E-06	3.968253968	14
+7500	270000	3.7037E-06	3.703703704	15
+8000	288000	3.47222E-06	3.472222222	16
+8500	306000	3.26797E-06	3.267973856	17
+9000	324000	3.08642E-06	3.086419753	18
+9500	342000	2.92398E-06	2.923976608	19
+10000	360000	2.77778E-06	2.777777778	20
+*/
+// alternatively, for every 200 rpm from 200 up to 10K, (5000/36)*PIP
+
+#include <AS5040.h>
+AS5040 myAS5040(2,3,4);
+
+volatile float PIP_period;    // microseconds between interrupts, ranges from 55 down to 2.777, needs lots of digits.
 volatile long microseconds;  // time between PIP signals
 volatile int throttle_position;   // rotary encoder on throttle
 int output_pin = 1;          // SAW output
@@ -51,35 +75,32 @@ void count_interrupt()
 
 int lookup_delay(long PIP_period, int throttle_position)
 {
-  /*int advance[2][8] = 
-  {{10,11,12,13,14,15,16,17}, 
-   {20,21,22,23,24,25,26,27}}; */
-  static int rowsize = 8;  // presumably this is rpm
-  static int columnsize = 3; // and this is throttle position
-  int advance[8][3] = {{10,11,12},{13,14,15},{16,17,18},{19,20,21},{22,23,24},{25,26,27},{28,29,30},{31,32,33}};
+  const int rowsize = 8;  // presumably this is rpm
+  const int columnsize = 3; // and this is throttle position
+  int advance[rowsize][columnsize] = {{10,11,12},{13,14,15},{16,17,18},{19,20,21},{22,23,24},{25,26,27},{28,29,30},{31,32,33}};
   int rows, columns;
-  rows = 1;   // this is wrong: I was doing something amazing in here.
+  rows = 1;   // this should use PIP_period in uS, ranging from 60 down to 2.5.  1/PIP will give a linear function.
+  // for example, a linearizing function for 500-10,000 by 500's would be (1000/18)/uS, resulting in a 1-20 linear function.
+  rows = (int)((1000.0/18.0)/PIP_period);
   columns = throttle_position;
   if (rows < 0) rows = 0;
   if (rows > rowsize-1) rows = rowsize-1;
   if (columns > columnsize-1) columns = columnsize-1;
   if (columns < 0) columns = 0;    // these need to be changed to reflect the size of the array.
   return(advance[rows] [columns]);
-  
 }
 
 int throttle_position_read()
 {
-  int angle;
-  angle = AS5040_read();
-  return angle;
-}
-
-int AS5040_read()
-{
-  int angle;
-  angle = myAS5040.measured_degrees();
-  // this needs to digitize to nearest 10 or whatever the column fineness is.
+  int angle; // nmeasured throttle angle
+  int offset; // difference between min throttle angle and zero
+  int scaling; // map throttle min/max to 0-100
+  
+  offset = 0; // this will need to be changed based on use
+  scaling = 1; // this, too, will need to be changed
+  
+  angle = myAS5040.encoder_value(); // this needs to be converted to a 0-to-100 value, probably.
+  angle = angle - offset * scaling;
   return angle;
 }
 
