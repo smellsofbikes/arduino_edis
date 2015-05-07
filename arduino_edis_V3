@@ -1,22 +1,25 @@
 
 // edis controller code.
-// Strategy is to make a 2d array, one being rpm, the other being load, with no hard-coded rpm or load information, just
-// a slope/offset/digitization into each one.  (maybe compute as a 0-1 function, then multiply by the number of rows and columns, 
-// then turn into an integer and read that row or column.)
+// Strategy is to make a 2d array, one being rpm, the other being load, with no hard-coded rpm or load 
+//   information, just a slope/offset/digitization into each one.  (maybe compute as a 0-1 function, 
+//   then multiply by the number of rows and columns, then turn into an integer and read that row or column.)
 
 // pip is every tooth, so 36 times per revolution.  At 6000 rpm, that's 3600 pulses per second.
-// Measured milliseconds will range from 120mS for 500 rpm to 6mS for 10,000 rpm.  Or 55 to 2.777uS.  Working in uS is better.
+// Measured milliseconds will range from 120mS for 500 rpm to 6mS for 10,000 rpm.  Or 55 to 2.777uS.  
+//   Working in uS is better.
 
-// program continuously reads throttle position.  When a negative interrupt is caught, store microseconds, then the array number 
-//  (which is the pause time in microseconds) is retrieved.  Pin set high, delay for pause time, pin set low, exit interrupt.
+// program continuously reads throttle position.  When a negative interrupt is caught, store microseconds, 
+//  then the array number (which is the pause time in microseconds) is retrieved.  Pin set high, 
+//  delay for pause time, pin set low, exit interrupt.
 
-// SAW ranges from 64 to 1792 microseconds with max resolution of 4 microseconds.  That's 432 steps.  If I use 8 microsecond resolution
-// I can just use ints to store my table (although I have so much space I could use longs.)
-// I would have to multiply the result by four if I go with ints.  If I go with longs I get to use all the resolution and don't have
-// to multiply -- values would directly reflect the pause times.
+// SAW ranges from 64 to 1792 microseconds with max resolution of 4 microseconds.  That's 432 steps.  
+//    If I use 8 microsecond resolution I can just use ints to store my table (although I have so much 
+//    space I could use longs.)
+//    I would have to multiply the result by four if I go with ints.  If I go with longs I get to use 
+//    all the resolution and don't have to multiply -- values would directly reflect the pause times.
 
-// I could also store the degrees advance in the table, then multiply to generate the values, but why?  I can back-calculate that
-// if necessary.
+// I could also store the degrees advance in the table, then multiply to generate the values, but why?  
+//   I can back-calculate that if necessary.
 
 /* 
 rpm  interrupts	 seconds         micros      linearized
@@ -48,7 +51,7 @@ AS5040 myAS5040(2,3,4);
 
 volatile float PIP_period;    // microseconds between interrupts, ranges from 55 down to 2.777, needs lots of digits.
 volatile long microseconds;  // time between PIP signals
-volatile int throttle_position;   // rotary encoder on throttle
+volatile long throttle_position;   // rotary encoder on throttle
 int output_pin = 1;          // SAW output
 int debug = 1;
 
@@ -63,7 +66,7 @@ void setup()
 }
 
 void count_interrupt()
-{
+{    // this is a blocking function, but as long as time is called it should be able to recover
   int delaytime;
   PIP_period = micros() - microseconds;
   microseconds = micros();
@@ -96,7 +99,7 @@ int throttle_position_read()
   int offset; // difference between min throttle angle and zero
   int scaling; // map throttle min/max to 0-100
   
-  offset = 0; // this will need to be changed based on use
+  offset = 0; // this will need to be changed based on use -- could be programmed into the 5040's prom.
   scaling = 1; // this, too, will need to be changed
   
   angle = myAS5040.encoder_value(); // this needs to be converted to a 0-to-100 value, probably.
