@@ -1,4 +1,4 @@
-
+#include <math.h>
 // edis controller code.
 // Strategy is to make a 2d array, one being rpm, the other being load, with no hard-coded rpm or load 
 //   information, just a slope/offset/digitization into each one.  (maybe compute as a 0-1 function, 
@@ -103,8 +103,8 @@ int throttle_position_read()
   offset = 0; // this will need to be changed based on use -- could be programmed into the 5040's prom.
   scaling = 1; // this, too, will need to be changed
   
-  angle = myAS5040.encoder_value(); // this needs to be converted to a 0-to-100 value, probably.
-  angle = angle - offset * scaling;
+  angle = myAS5040.encoder_value(); // this is 1-4096, needs to be converted to a 0-to-100 value, probably.
+  angle = (angle - offset) * scaling;
   return angle;
 }
 
