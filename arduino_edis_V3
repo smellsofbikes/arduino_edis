@@ -22,6 +22,9 @@
 // I could also store the degrees advance in the table, then multiply to generate the values, but why?  
 //   I can back-calculate that if necessary.  It would make debug for other people easier.
 
+// it is likely that the best way to store the table itself is in external rom.  For initial development probably
+//  stored in external flash or eeprom.
+
 /* 
 rpm  interrupts	 seconds         micros      linearized (=rpm/500)
 500	18000	5.55556E-05	55.55555556	1
