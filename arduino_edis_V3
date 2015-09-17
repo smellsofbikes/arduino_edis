@@ -1,16 +1,17 @@
 #include <math.h>
 // edis controller code.
-// Strategy is to make a 2d array, one being rpm, the other being load, with no hard-coded rpm or load 
+// Strategy is to make a 2d array, one being rpm, the other being tps, with no hard-coded rpm or tps 
 //   information, just a slope/offset/digitization into each one.  (maybe compute as a 0-1 function, 
 //   then multiply by the number of rows and columns, then turn into an integer and read that row or column.)
 
-// pip is every tooth, so 36 times per revolution.  At 6000 rpm, that's 3600 pulses per second.
-// Measured milliseconds will range from 120mS for 500 rpm to 6mS for 10,000 rpm.  Or 55 to 2.777uS.  
-//   Working in uS is better.
+// (ford edis) pip is every tooth, so 36 times per revolution.  At 6000 rpm, that's 3600 pulses per second.
+// Measured interval in milliseconds will range from 120mS for 500 rpm to 6mS for 10,000 rpm. 
 
-// program continuously reads throttle position.  When a negative interrupt is caught, store microseconds, 
+// program continuously reads throttle position.  When a negative interrupt from tach is caught, store microseconds, 
 //  then the array number (which is the pause time in microseconds) is retrieved.  Pin set high, 
-//  delay for pause time, pin set low, exit interrupt.
+//  delay for required edis signal pause time, pin set low, exit interrupt.  This is blocking but
+//  as it should exit far before next interrupt, and timer counter is separate hardware, it should
+//  not block anything.
 
 // SAW ranges from 64 to 1792 microseconds with max resolution of 4 microseconds.  That's 432 steps.  
 //    If I use 8 microsecond resolution I can just use ints to store my table (although I have so much 
@@ -19,10 +20,10 @@
 //    all the resolution and don't have to multiply -- values would directly reflect the pause times.
 
 // I could also store the degrees advance in the table, then multiply to generate the values, but why?  
-//   I can back-calculate that if necessary.
+//   I can back-calculate that if necessary.  It would make debug for other people easier.
 
 /* 
-rpm  interrupts	 seconds         micros      linearized
+rpm  interrupts	 seconds         micros      linearized (=rpm/500)
 500	18000	5.55556E-05	55.55555556	1
 1000	36000	2.77778E-05	27.77777778	2
 1500	54000	1.85185E-05	18.51851852	3
@@ -46,7 +47,7 @@ rpm  interrupts	 seconds         micros      linearized
 */
 // alternatively, for every 200 rpm from 200 up to 10K, (5000/36)*PIP
 
-#include <AS5040.h>
+#include <AS5040.h>  // code for austrian microsystems magnetic rotary encoder for reading throttle position
 AS5040 myAS5040(2,3,4);
 
 volatile float PIP_period;    // microseconds between interrupts, ranges from 55 down to 2.777, needs lots of digits.
@@ -57,11 +58,11 @@ int debug = 1;
 
 void setup()
 {
-  attachInterrupt(0, count_interrupt, FALLING); // this implicitly sets the pin for interrupt0 to input?
-  pinMode(output_pin, OUTPUT);
+  attachInterrupt(0, count_interrupt, FALLING); // this implicitly sets the pin for interrupt0 to input
+  pinMode(output_pin, OUTPUT);  // trigger signal to edis module
   if(debug)
   {
-    Serial.begin(9600);
+    Serial.begin(9600);  // serial output completely slays any real-time performance
   }
 }
 
@@ -70,9 +71,9 @@ void count_interrupt()
   int delaytime;
   PIP_period = micros() - microseconds;
   microseconds = micros();
-  delaytime = lookup_delay(PIP_period, throttle_position);
-  digitalWrite(output_pin, HIGH);
-  delayMicroseconds(delaytime);
+  delaytime = lookup_delay(PIP_period, throttle_position); // call lookup table
+  digitalWrite(output_pin, HIGH);                          // this is arguably an ugly way of doing this.
+  delayMicroseconds(delaytime);                            //  may be better to set up a hardware pwm as a single-shot
   digitalWrite(output_pin, LOW);
 }
 
