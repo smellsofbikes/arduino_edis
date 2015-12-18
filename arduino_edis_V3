@@ -53,7 +53,7 @@ rpm  interrupts	 seconds         micros      linearized (=rpm/500)
 #include <AS5040.h>  // code for austrian microsystems magnetic rotary encoder for reading throttle position
 AS5040 myAS5040(2,3,4);
 
-volatile float PIP_period;    // microseconds between interrupts, ranges from 55 down to 2.777, needs lots of digits.
+volatile long PIP_period;    // microseconds between interrupts, ranges from 55 down to 2.777, needs lots of digits.
 volatile long microseconds;  // time between PIP signals
 volatile long throttle_position;   // rotary encoder on throttle
 int output_pin = 1;          // SAW output
