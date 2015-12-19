@@ -71,7 +71,7 @@ void setup()
   }
 }
 
-arbround(long target, long roundval) // round target up/down to nearest roundval value
+long arbround(long target, long roundval) // round target up/down to nearest roundval value
 {
 	long retval = 0;
 
