@@ -86,7 +86,7 @@ void count_interrupt()
   delaytime = lookup_delay(PIP_period, throttle_position); // call lookup table
   if(debug)
   {
-    	*Serial.print("PIP: ");
+    	Serial.print("PIP: ");
   	Serial.print(PIP_period);
   	Serial.print(", throttle pos: ");
   	Serial.print(throttle_position);*/
@@ -123,8 +123,8 @@ long lookup_delay(long PIP_period, int throttle_position)
   }
   
   const int rowsize = 8;  // presumably this is rpm, should eventually be 20 for every 500 rpm
-  const int columnsize = 3; // and this is throttle position, should be 1-100 (by 5? or 10?) for 0-full throttle.
-  int advance[rowsize][columnsize] = {{11,12,13},{21,22,23},{31,32,33},{41,42,43},{51,52,53},{61,62,63},{71,72,73},{81,82,83}};
+  const int columnsize = 4; // and this is throttle position, should be 1-100 (by 5? or 10?) for 0-full throttle.
+  int advance[rowsize][columnsize] = {{11,12,13.14},{21,22,23,24},{31,32,33,34},{41,42,43,44},{51,52,53,54},{61,62,63,64},{71,72,73,74},{81,82,83,84}};
   int rows, columns;
   // this should use PIP_period in uS, ranging from 60 down to 2.5.  1/PIP will give a linear function.
   // for example, a linearizing function for 500-10,000 by 500's would be (1000/18)/uS, resulting in a 1-20 
