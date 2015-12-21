@@ -1,0 +1,155 @@
+#include <math.h>
+// edis controller code.
+// Strategy is to make a 2d array, one being rpm, the other being tps, with no hard-coded rpm or tps 
+//   information, just a slope/offset/digitization into each one.  (maybe compute as a 0-1 function, 
+//   then multiply by the number of rows and columns, then turn into an integer and read that row or column.)
+
+// (ford edis) pip is every tooth, so 36 times per revolution.  At 6000 rpm, that's 3600 pulses per second.
+// Measured interval in milliseconds will range from 120mS for 500 rpm to 6mS for 10,000 rpm. 
+
+// HOWEVER! the ford edis module provides a tach output, once per revolution, so at 6000 rpm that's 100 pulses per
+//  second.  Way better.
+
+// program continuously reads throttle position.  When a negative interrupt from tach is caught, store microseconds, 
+//  then the array number (which is the pause time in microseconds) is retrieved.  Pin set high, 
+//  delay for required edis signal pause time, pin set low, exit interrupt.  This is blocking but
+//  as it should exit far before next interrupt, and timer counter is separate hardware, it should
+//  not block anything.
+
+// SAW ranges from 64 to 1792 microseconds with max resolution of 4 microseconds.  That's 432 steps.  
+//    If I use 8 microsecond resolution I can just use ints to store my table (although I have so much 
+//    space I could use longs.)
+//    I would have to multiply the result by four if I go with ints.  If I go with longs I get to use 
+//    all the resolution and don't have to multiply -- values would directly reflect the pause times.
+
+// I could also store the degrees advance in the table, then multiply to generate the values, but why?  
+//   I can back-calculate that if necessary.  It would make debug for other people easier.
+
+// it is likely that the best way to store the table itself is in external rom.  For initial development probably
+//  stored in external flash or eeprom.
+
+/* edis module tach output
+rpm	interrupts/sec	seconds 	microseconds	linearized
+500	8.333333	0.120000	120000.0000	1
+1000	16.66667	0.060000	60000.0000	2
+1500	25.00000	0.040000	40000.0000	3
+2000	33.333333	0.030000	30000.0000	4
+2500	41.66667	0.0240000	24000.0000	5
+3000	50.00000	0.020000	20000.0000	6
+3500	58.333333	0.017142857	17142.85714	7
+4000	66.66667	0.0150000	15000.0000	8
+4500	75.00000	0.013333333	13333.33333	9
+5000	83.333333	0.0120000	12000.0000	10
+5500	91.66667	0.010909091	10909.09091	11
+6000	100.00000	0.010000	10000.0000	12
+6500	108.333333	0.009230769	9230.769231	13
+7000	116.66667	0.008571429	8571.428571	14
+7500	125.00000	0.0080000	8000.0000	15
+8000	133.333333	0.00750000	7500.0000	16
+8500	141.66667	0.007058824	7058.823529	17
+9000	150.00000	0.006666667	6666.666667	18
+9500	158.333333	0.006315789	6315.789474	19
+10000	166.66667	0.0060000	6000.0000	20
+*/
+
+#include <AS5040.h>  // code for austrian microsystems magnetic rotary encoder for reading throttle position
+AS5040 myAS5040(9,8,7);
+
+volatile long PIP_period;    // microseconds between interrupts, ranges from 55 down to 2.777, needs lots of digits.
+volatile long microseconds;  // time between PIP signals
+volatile long throttle_position;   // rotary encoder on throttle
+int output_pin = 1;          // SAW output
+int debug = 1;
+
+void setup()
+{
+  attachInterrupt(0, count_interrupt, FALLING); // this implicitly sets the pin for interrupt0 to input
+  pinMode(output_pin, OUTPUT);  // trigger signal to edis module
+  if(debug)
+  {
+    Serial.begin(9600);  // serial output completely slays any real-time performance
+  }
+}
+
+long arbround(long target, long roundval) // round target up/down to nearest roundval value
+{
+	long retval = 0;
+
+	while(retval < (target - roundval))
+		retval += roundval;
+
+	if ((target - retval) > ((roundval/2)-1)) // the -1 makes 5 round upwards rather than downwards.
+		retval += roundval;
+
+	return retval;
+}
+
+
+void count_interrupt()
+{    // this is a blocking function, but as long as microseconds are recorded at entry it should be able to run accurately
+  int delaytime;
+  detachInterrupt(0);
+  PIP_period = micros() - microseconds;
+  microseconds = micros();
+  delaytime = lookup_delay(PIP_period, throttle_position); // call lookup table
+  //digitalWrite(output_pin, HIGH);                          // this is an ugly way of doing this.
+  //delayMicroseconds(delaytime);                            //  may be better to set up a hardware pwm as a single-shot
+  //digitalWrite(output_pin, LOW);
+  /*Serial.print("PIP: ");
+  Serial.print(PIP_period);
+  Serial.print(", throttle pos: ");
+  Serial.print(throttle_position);*/
+  Serial.print("Delay: ");
+  Serial.println(delaytime);
+  attachInterrupt(0, count_interrupt, FALLING);
+}
+
+long lookup_delay(long PIP_period, int throttle_position)
+{
+  long rpm = 1000000/PIP_period;
+  Serial.print("rpm: ");
+  Serial.println(rpm);
+  long rounded_rpm = arbround(rpm, 500);  // rpm rounded to nearest 500
+  long rounded_tp = arbround(throttle_position, 5); // throttle position 1-1024 rounded to nearest 5.
+  // note throttle is likely to only change 30 degrees or so, meaning it'll only use 1/12 the sensor's resolution, so the value will
+  //  only be like 1-80.
+  Serial.print("rounded rpm: ");
+  Serial.print(rounded_rpm);
+  Serial.print(" ,tp: ");
+  Serial.println(rounded_tp);
+  
+  const int rowsize = 8;  // presumably this is rpm, should eventually be 20 for every 500 rpm
+  const int columnsize = 3; // and this is throttle position, should be 1-100 (by 5? or 10?) for 0-full throttle.
+  int advance[rowsize][columnsize] = {{11,12,13},{21,22,23},{31,32,33},{41,42,43},{51,52,53},{61,62,63},{71,72,73},{81,82,83}};
+  int rows, columns;
+  // this should use PIP_period in uS, ranging from 60 down to 2.5.  1/PIP will give a linear function.
+  // for example, a linearizing function for 500-10,000 by 500's would be (1000/18)/uS, resulting in a 1-20 
+  //  linear function -- see table above.
+  rows = rounded_rpm / 500;
+  columns = rounded_tp;
+  if (rows < 0) rows = 0;
+  if (rows > rowsize-1) rows = rowsize-1;
+  if (columns > columnsize-1) columns = columnsize-1;
+  if (columns < 0) columns = 0;    // these need to be changed to reflect the size of the array.
+  return(advance[rows] [columns]);
+}
+
+int throttle_position_read()
+{
+  int angle; // nmeasured throttle angle
+  int offset; // difference between min throttle angle and zero
+  int scaling; // map throttle min/max to 0-100
+  
+  offset = 0; // this will need to be changed based on use -- could be programmed into the 5040's prom.
+  scaling = 1; // this, too, will need to be changed
+  
+  angle = myAS5040.encoder_value(); // this is 1-4096, needs to be converted to a 0-to-100 value, probably.
+  angle = (angle - offset) * scaling;
+  return angle;
+}
+
+void loop()
+{
+  throttle_position = throttle_position_read();
+  
+}
