@@ -5,7 +5,8 @@
 //   then multiply by the number of rows and columns, then turn into an integer and read that row or column.)
 
 // (ford edis) pip is every tooth, so 36 times per revolution.  At 6000 rpm, that's 3600 pulses per second.
-// Measured interval in milliseconds will range from 120mS for 500 rpm to 6mS for 10,000 rpm. 
+// Measured interval in milliseconds will range from 120mS for 500 rpm to 6mS for 10,000 rpm.   (Okay actually 35
+//  since it has one tooth missing, but hey.)
 
 // HOWEVER! the ford edis module provides a tach output, once per revolution, so at 6000 rpm that's 100 pulses per
 //  second.  Way better.
