@@ -49,9 +49,6 @@ rpm	interrupts/sec	seconds 	microseconds	linearized
 10000	166.66667	0.0060000	6000.0000	20
 */
 
-#include <AS5040.h>  // code for austrian microsystems magnetic rotary encoder for reading throttle position
-AS5040 myAS5040(9,8,7); // assign pins for clock, data, and chip select (not in that order.)
-
 // set pulse width but don't fire (useful for quick-fire using osp_fire())
 #define OSP_SET_WIDTH(cycles) (OCR1B = 0xffff-(cycles-1))
 
@@ -85,7 +82,7 @@ void osp_setup(uint16_t cycles) {
 // globals, yech
 volatile long PIP_period;    // microseconds between interrupts
 volatile long microseconds;  // time between PIP signals
-volatile long throttle_position;   // rotary encoder on throttle
+volatile long MAP;   // map sensor
 int output_pin = 4;          // SAW output
 int debug = 0;
 boolean interrupt_flag = 0;
@@ -94,9 +91,16 @@ void setup()
 {
   attachInterrupt(0, count_interrupt, FALLING); // this implicitly sets the pin for interrupt0 to input
   pinMode(output_pin, OUTPUT);  // trigger signal to edis module
+  pinMode(A3, INPUT); //analog input
+  DIDR0 = 0b00111111;            // digital inputs disabled
+  ADMUX = 0x43;            // measuring on ADC3, use the internal 1.1 reference
+  ADCSRA = 0b10101111;           // AD-converter on, interrupt enabled, prescaler = 128
+  ADCSRB = 0x40;           // AD channels MUX on, free running mode
+  ADCSRA |= (1<<ADSC);  // Start the conversion by setting bit 6 (=ADSC) in ADCSRA
+  sei();                   // set interrupt flag
   if(debug)
   {
-    Serial.begin(9600);  // serial output completely slays any real-time performance
+    Serial.begin(9600);  // serial output completely slays any real-time performance: don't use this for an engine
   }
   osp_setup(1); // initialize the oneshot with a 1 pulse (66ns for 16mhz system clock) setting
 }
@@ -120,6 +124,18 @@ void count_interrupt() // this is called on receipt of a new tach interrupt sign
   attachInterrupt(0, count_interrupt, FALLING);
 }
 
+ISR(ADC_vect)  // this is called when the adc finishes a conversion
+{
+  // by declaring analog_value volatile, I prevent the compiler
+  //  from optimizing the final assignment to a multistep operation
+  uint16_t volatile analog_value;
+  analog_value = ADCL;        // store lower byte ADC
+  analog_value += ADCH << 8;  // store higher bytes ADC
+  cli(); // below is not atomic and is important so turn off interrupts for three clock cycles.
+  MAP = analog_value;
+  sei();
+}
+
 long lookup_delay(long PIP_period, int throttle_position)
 {
   long rpm = 1000000/PIP_period;  // I might want to can this and just use pip_period to index rather than RPM, to save a divide.
@@ -129,9 +145,8 @@ long lookup_delay(long PIP_period, int throttle_position)
   	Serial.println(rpm);
   }
   long rounded_rpm = arbround(rpm, 500);  // rpm rounded to nearest 500 (or whatever the rpm table's bin count is)
-  long rounded_tp = arbround(throttle_position, 5); // throttle position 1-1024 rounded to nearest 5.
-  // note throttle is likely to only change 30 degrees or so, meaning it'll only use 1/12 the sensor's resolution, so the value will
-  //  only be like 1-80  In real usage this will likely be unrounded.  
+  long rounded_tp = arbround(MAP, 5); // MAP sensor reading 1-1024 rounded to nearest 5.
+  
   if(debug)
   {
   	Serial.print("rounded rpm: ");
@@ -169,23 +184,8 @@ long lookup_delay(long PIP_period, int throttle_position)
   return(advance[rows] [columns] - temperature_retard[temperature]);
 }
 
-int throttle_position_read()
-{
-  int angle; // nmeasured throttle angle
-  int offset; // difference between min throttle angle and zero
-  int scaling; // map throttle min/max to 0-100
-  
-  offset = 0; // this will need to be changed based on use -- could be programmed into the 5040's prom.
-  scaling = 1; // this, too, will need to be changed
-  
-  angle = myAS5040.encoder_value(); // this is 1-4096, needs to be converted to a 0-to-100 value, probably.
-  angle = (angle - offset) * scaling;
-  return angle;
-}
-
 void loop()
 {
-  throttle_position = throttle_position_read();
   if(interrupt_flag)  // only enter the update routine if there has been a flag set in the tach interrupt routine
                       //  ALSO: only update SAW if there has been an interrupt.  (This means once/rpm, meaning alternate firing cycles)
   {
@@ -196,8 +196,8 @@ void loop()
     {
       	Serial.print("PIP: ");
     	Serial.print(PIP_period);
-    	Serial.print(", throttle pos: ");
-    	Serial.print(throttle_position);
+    	Serial.print(", manifold pressure: ");
+    	Serial.print(MAP);
     	Serial.print(" Delay: ");
     	Serial.print(delaytime);
         Serial.print(" SAW: ");
